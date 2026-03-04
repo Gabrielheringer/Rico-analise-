@@ -11,13 +11,28 @@ type AuthMode = 'login' | 'register' | 'forgot';
 const ServerStatus = () => {
   const [status, setStatus] = useState<'checking' | 'online' | 'offline'>('checking');
 
-  useEffect(() => {
-    fetch('/api/auth/me')
-      .then(res => {
+  const checkStatus = async (retries = 3) => {
+    for (let i = 0; i < retries; i++) {
+      try {
+        const res = await fetch('/api/auth/me', { 
+          method: 'GET',
+          headers: { 'Accept': 'application/json' }
+        });
         const isJson = res.headers.get("content-type")?.includes("application/json");
-        setStatus((res.status === 401 || res.ok) && isJson ? 'online' : 'offline');
-      })
-      .catch(() => setStatus('offline'));
+        if ((res.status === 401 || res.ok) && isJson) {
+          setStatus('online');
+          return;
+        }
+      } catch (err) {
+        console.warn(`Tentativa de status ${i + 1} falhou`);
+        if (i < retries - 1) await new Promise(r => setTimeout(r, 1000));
+      }
+    }
+    setStatus('offline');
+  };
+
+  useEffect(() => {
+    checkStatus();
   }, []);
 
   return (

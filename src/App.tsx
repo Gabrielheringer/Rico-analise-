@@ -18,6 +18,15 @@ const DEFAULT_SETTINGS: UserSettings = {
   enableAlerts: true,
 };
 
+declare global {
+  interface Window {
+    aistudio: {
+      hasSelectedApiKey: () => Promise<boolean>;
+      openSelectKey: () => Promise<void>;
+    };
+  }
+}
+
 const compressImage = (base64Str: string, maxWidth = 1920, maxHeight = 1080): Promise<string> => {
   return new Promise((resolve) => {
     const img = new Image();
@@ -262,9 +271,17 @@ export default function App() {
     } catch (err: any) {
       console.error('Erro na análise:', err);
       let msg = err instanceof Error ? err.message : "Erro desconhecido";
-      if (msg.includes("API key not valid")) {
-        msg = "Chave de API Gemini Inválida. Por favor, verifique se a sua GEMINI_API_KEY está configurada corretamente no painel de Secrets (ícone de cadeado) do AI Studio.";
+      
+      if (msg === "API_KEY_MISSING") {
+        msg = "Chave de API Gemini não encontrada. Por favor, configure a sua GEMINI_API_KEY no painel de Secrets (ícone de cadeado) do AI Studio para habilitar a análise de IA.";
+      } else if (msg.includes("API key not valid") || msg.includes("invalid API key")) {
+        msg = "Chave de API Gemini Inválida. Verifique se a chave copiada do Google AI Studio está correta e ativa. Se você acabou de criar a chave, aguarde alguns minutos.";
+      } else if (msg.includes("model not found") || msg.includes("404")) {
+        msg = "O modelo de IA solicitado não está disponível no momento. Tente novamente em instantes.";
+      } else if (msg.includes("alta demanda") || msg.includes("503") || msg.includes("UNAVAILABLE")) {
+        msg = "Os servidores de IA estão com tráfego intenso. Tentei 3 modelos diferentes sem sucesso. Por favor, aguarde 10-15 segundos e tente novamente.";
       }
+      
       setError(msg);
       setResult(null);
     } finally {
@@ -423,6 +440,13 @@ export default function App() {
               error={error} 
               settings={settings} 
               onOpenPricing={() => setIsPricingOpen(true)}
+              onSelectKey={async () => {
+                if (window.aistudio) {
+                  await window.aistudio.openSelectKey();
+                  // The page will likely refresh or we can just retry
+                  window.location.reload();
+                }
+              }}
               onRetry={() => {
                 setResult(null);
                 setError(null);

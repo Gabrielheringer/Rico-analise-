@@ -5,6 +5,7 @@ import Database from "better-sqlite3";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import cookieParser from "cookie-parser";
+import cors from "cors";
 import { MercadoPagoConfig, Preference } from 'mercadopago';
 import path from "path";
 import { fileURLToPath } from "url";
@@ -162,6 +163,10 @@ async function startServer() {
 
   app.use(express.json());
   app.use(cookieParser());
+  app.use(cors({
+    origin: true,
+    credentials: true
+  }));
 
   // Health check
   app.get("/api/health", (req, res) => {
@@ -395,39 +400,48 @@ async function startServer() {
 
       console.log(`Análise confirmada e creditada para: ${user.id} (${user.analysis_count + 1})`);
       res.json({ success: true, analysis_count: user.analysis_count + 1 });
-    } catch (err) {
+    } catch (err: any) {
       console.error("Erro ao incrementar análise:", err);
-      res.status(401).json({ error: "Token inválido" });
+      if (err.name === 'JsonWebTokenError' || err.name === 'TokenExpiredError') {
+        return res.status(401).json({ error: "Sessão expirada. Por favor, faça login novamente." });
+      }
+      res.status(500).json({ error: "Erro interno ao processar análise" });
     }
   });
 
   app.get(["/api/analysis/history", "/api/analysis/history/"], async (req, res) => {
+    console.log(`[API] Buscando histórico para usuário...`);
     const token = req.cookies.token || req.headers.authorization?.split(" ")[1];
     if (!token) return res.status(401).json({ error: "Não autenticado" });
 
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as any;
-      let history: any[];
+      let history: any[] = [];
 
-      if (isSupabase && supabase) {
-        const { data, error } = await supabase.from('analyses')
-          .select('trend, confidence, entry_m1, entry_m5, rationale, created_at')
-          .eq('user_id', decoded.id)
-          .order('created_at', { ascending: false })
-          .limit(10);
-        if (error) throw error;
-        history = data;
-      } else {
-        history = localDb.prepare(`
-          SELECT trend, confidence, entry_m1, entry_m5, rationale, created_at 
-          FROM analyses 
-          WHERE user_id = ? 
-          ORDER BY created_at DESC 
-          LIMIT 10
-        `).all(decoded.id);
+      try {
+        if (isSupabase && supabase) {
+          const { data, error } = await supabase.from('analyses')
+            .select('trend, confidence, entry_m1, entry_m5, rationale, created_at')
+            .eq('user_id', decoded.id)
+            .order('created_at', { ascending: false })
+            .limit(10);
+          if (error) throw error;
+          history = data || [];
+        } else {
+          history = localDb.prepare(`
+            SELECT trend, confidence, entry_m1, entry_m5, rationale, created_at 
+            FROM analyses 
+            WHERE user_id = ? 
+            ORDER BY created_at DESC 
+            LIMIT 10
+          `).all(decoded.id) as any[];
+        }
+        res.json({ history });
+      } catch (dbErr: any) {
+        console.error("Erro ao acessar banco de dados (Histórico):", dbErr);
+        // Fallback to empty history instead of failing if it's just a missing table
+        res.json({ history: [], warning: "Erro ao acessar banco de dados" });
       }
-      
-      res.json({ history });
     } catch (err) {
       res.status(401).json({ error: "Token inválido" });
     }

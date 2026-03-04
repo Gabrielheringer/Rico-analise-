@@ -26,27 +26,59 @@ export const AnalysisHistory: React.FC<AnalysisHistoryProps> = ({ analysisCount 
   const [loading, setLoading] = useState(true);
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
 
-  const fetchHistory = async () => {
+  const fetchHistory = async (signal?: AbortSignal, retryCount = 0) => {
     try {
-      const response = await fetch('/api/analysis/history', { credentials: 'include' });
+      let token = null;
+      try {
+        token = localStorage.getItem('rico_token');
+      } catch (e) {}
+
+      const response = await fetch('/api/analysis/history', { 
+        method: 'GET',
+        credentials: 'include',
+        headers: {
+          'Accept': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        signal
+      });
+      
       if (response.ok) {
         const data = await response.json();
-        setHistory(data.history);
+        setHistory(data.history || []);
+      } else if (response.status === 401) {
+        console.warn('Sessão expirada ao buscar histórico');
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        console.error(`Erro ao buscar histórico (Status ${response.status}):`, errorData);
       }
-    } catch (err) {
-      console.error('Erro ao buscar histórico:', err);
+    } catch (err: any) {
+      if (err.name === 'AbortError') return;
+      
+      console.error(`Tentativa ${retryCount + 1} falhou:`, err.message);
+      
+      if (retryCount < 2) {
+        const delay = Math.pow(2, retryCount) * 1000;
+        setTimeout(() => fetchHistory(signal, retryCount + 1), delay);
+      } else {
+        console.error('Erro persistente de rede ao buscar histórico:', err);
+      }
     } finally {
-      setLoading(false);
+      if (retryCount === 0 || history.length > 0) {
+        setLoading(false);
+      }
     }
   };
 
   useEffect(() => {
-    fetchHistory();
+    const controller = new AbortController();
+    fetchHistory(controller.signal);
+    return () => controller.abort();
   }, [analysisCount]);
 
   useEffect(() => {
     // Refresh history every minute as backup
-    const interval = setInterval(fetchHistory, 60000);
+    const interval = setInterval(() => fetchHistory(), 60000);
     return () => clearInterval(interval);
   }, []);
 

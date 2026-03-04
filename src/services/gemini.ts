@@ -10,8 +10,13 @@ export interface AnalysisResult {
 }
 
 export async function generateSpeech(text: string): Promise<string | null> {
-  const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY || (import.meta as any).env?.VITE_GEMINI_API_KEY;
-  if (!apiKey || apiKey === 'undefined' || apiKey.length < 10) return null;
+  const apiKey = (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== 'undefined' && process.env.GEMINI_API_KEY !== '') 
+    ? process.env.GEMINI_API_KEY 
+    : (process.env.API_KEY && process.env.API_KEY !== 'undefined' && process.env.API_KEY !== '')
+      ? process.env.API_KEY
+      : (import.meta as any).env?.VITE_GEMINI_API_KEY;
+
+  if (!apiKey || apiKey.length < 10) return null;
 
   try {
     const ai = new GoogleGenAI({ apiKey });
@@ -54,21 +59,26 @@ export async function generateSpeech(text: string): Promise<string | null> {
 }
 
 export async function analyzeChart(base64Image: string): Promise<AnalysisResult> {
-  const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY || (import.meta as any).env?.VITE_GEMINI_API_KEY;
+  const apiKey = (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== 'undefined' && process.env.GEMINI_API_KEY !== '') 
+    ? process.env.GEMINI_API_KEY 
+    : (process.env.API_KEY && process.env.API_KEY !== 'undefined' && process.env.API_KEY !== '')
+      ? process.env.API_KEY
+      : (import.meta as any).env?.VITE_GEMINI_API_KEY;
   
-  if (!apiKey || apiKey === 'undefined' || apiKey === '' || apiKey.length < 10) {
+  if (!apiKey || apiKey.length < 10) {
     console.error("Chave de API ausente ou inválida.");
-    throw new Error("Ocorreu um erro de conexão com o servidor de inteligência artificial. Por favor, verifique se a GEMINI_API_KEY está configurada corretamente nos Secrets.");
+    throw new Error("API_KEY_MISSING");
   }
 
   const ai = new GoogleGenAI({ apiKey });
   
   // Model strategy: Try primary, fallback to stable if busy
   const primaryModel = "gemini-3-flash-preview";
-  const fallbackModel = "gemini-2.5-flash";
+  const secondaryModel = "gemini-flash-latest";
+  const tertiaryModel = "gemini-2.5-flash";
   
   // Helper for retrying with exponential backoff and fallback
-  async function callWithRetry(params: any, retries = 2, delay = 2000): Promise<any> {
+  async function callWithRetry(params: any, retries = 4, delay = 2000): Promise<any> {
     try {
       return await ai.models.generateContent(params);
     } catch (error: any) {
@@ -76,17 +86,31 @@ export async function analyzeChart(base64Image: string): Promise<AnalysisResult>
       const isQuotaExceeded = error.message?.includes("429") || error.message?.includes("quota") || error.message?.includes("RESOURCE_EXHAUSTED");
       
       if ((isBusy || isQuotaExceeded) && retries > 0) {
-        const waitTime = isQuotaExceeded ? delay * 2 : delay;
-        console.warn(`Servidor ocupado ou limite atingido. Tentando novamente em ${waitTime}ms... (Restam ${retries} tentativas)`);
+        // Model rotation logic
+        if (isBusy || isQuotaExceeded) {
+          if (params.model === primaryModel) {
+            console.log(`Modelo primário atingiu limite ou está ocupado, alternando para secundário: ${secondaryModel}`);
+            params.model = secondaryModel;
+          } else if (params.model === secondaryModel) {
+            console.log(`Modelo secundário atingiu limite ou está ocupado, alternando para terciário: ${tertiaryModel}`);
+            params.model = tertiaryModel;
+          } else {
+            console.log(`Todos os modelos com limitações, aguardando para tentar novamente...`);
+          }
+        }
+
+        // Try to extract retry delay from error message (e.g., "Please retry in 22s")
+        let waitTime = isQuotaExceeded ? delay * 3 : delay;
+        const retryMatch = error.message?.match(/retry in ([\d.]+)s/i);
+        if (retryMatch && retryMatch[1]) {
+          waitTime = (parseFloat(retryMatch[1]) + 1) * 1000; // Add 1s buffer
+          console.log(`Aguardando tempo sugerido pela API: ${waitTime}ms`);
+        }
+
+        console.warn(`Tentando novamente em ${waitTime}ms... (Restam ${retries} tentativas)`);
         await new Promise(resolve => setTimeout(resolve, waitTime));
         
-        // On last retry, try the fallback model if it's a model-specific issue
-        if (retries === 1 && params.model === primaryModel) {
-          console.log(`Usando modelo de backup: ${fallbackModel}`);
-          params.model = fallbackModel;
-        }
-        
-        return callWithRetry(params, retries - 1, waitTime * 2);
+        return callWithRetry(params, retries - 1, waitTime * 1.2);
       }
       throw error;
     }
