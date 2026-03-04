@@ -1,0 +1,21 @@
+{
+  "name": "RICO",
+  "short_name": "RICO",
+  "description": "Análise gráfica profissional com IA para M1 e M5.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0a",
+  "theme_color": "#00ff41",
+  "icons": [
+    {
+      "src": "https://picsum.photos/seed/terminal-green/192/192",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://picsum.photos/seed/terminal-green/512/512",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

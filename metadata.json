@@ -1,0 +1,5 @@
+{
+  "name": "R.I.C.O. ANALISE",
+  "description": "Análise gráfica profissional com IA para M1 e M5 via captura de câmera.",
+  "requestFramePermissions": ["camera"]
+}

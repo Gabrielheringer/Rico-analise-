@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>R.I.C.O. ANÁLISE - IA Trading</title>
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#00ff41" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="RICO" />
+    <link rel="apple-touch-icon" href="https://picsum.photos/seed/terminal-green/192/192" />
+    <script>
+      (function() {
+        const originalError = console.error;
+        console.error = function(...args) {
+          const msg = args[0] ? String(args[0]) : '';
+          if (msg.includes('WebSocket') || msg.includes('websocket') || msg.includes('failed to connect to websocket')) {
+            return;
+          }
+          originalError.apply(console, args);
+        };
+      })();
+      window.onerror = function(msg, url, lineNo, columnNo, error) {
+        // Ignore benign Vite HMR websocket errors in AI Studio environment
+        if (msg && (msg.includes('WebSocket') || msg.includes('websocket'))) {
+          return true; // Prevents the error from appearing in the console
+        }
+        return false;
+      };
+    </script>
+    <script src="https://sdk.mercadopago.com/js/v2"></script>
+  </head>
+  <body>
+    <div id="root">
+      <div style="background: #0a0a0a; height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #00ff41; font-family: monospace; text-align: center; padding: 20px;">
+        <div style="font-size: 20px; margin-bottom: 10px;">INICIALIZANDO TERMINAL R.I.C.O...</div>
+        <div style="font-size: 10px; color: #444;">SISTEMA QUANTUM v1.0.4</div>
+        <div id="debug-info" style="font-size: 8px; color: #222; margin-top: 20px;"></div>
+      </div>
+    </div>
+    <script>
+      document.getElementById('debug-info').innerText = 'UA: ' + navigator.userAgent;
+    </script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+
